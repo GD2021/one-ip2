@@ -53,5 +53,12 @@ jobs:
             git merge upstream/main -X theirs -m "chore: sync from upstream (resolved with theirs)" --no-edit
           fi
 
+          # 保持 wrangler.toml 中的名称为 Cloudflare Worker 对应的 one-ip2
+          sed -i.bak 's/name = "one-ip"/name = "one-ip2"/' wrangler.toml && rm -f wrangler.toml.bak
+          if ! git diff --quiet wrangler.toml; then
+            git add wrangler.toml
+            git commit --amend --no-edit || git commit -m "chore: keep worker name as one-ip2"
+          fi
+
           echo "Pushing changes to origin..."
           git push origin main
