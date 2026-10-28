@@ -25,19 +25,21 @@ export type ModelContext = {
 const empty = { type: "object", properties: {} };
 const text = (description: string) => ({ type: "string", description });
 const pages = [
-  "/",
-  "/network",
-  "/browser",
-  "/ai",
-  "/status",
-  "/status/openai",
-  "/status/claude",
-  "/docs/api",
-  "/terms",
-  "/privacy",
-  ...Object.values(toolGroups)
-    .flat()
-    .map((route) => route.path),
+  ...new Set([
+    "/",
+    "/lookup",
+    "/network",
+    "/browser",
+    "/ai",
+    "/ai/status/openai",
+    "/ai/status/claude",
+    "/docs/api",
+    "/terms",
+    "/privacy",
+    ...Object.values(toolGroups)
+      .flat()
+      .map((route) => route.path),
+  ]),
 ];
 
 function required(input: Input, key: string, max = 253) {
@@ -198,7 +200,7 @@ export function createWebMcpTools(navigate: (path: string) => void): Tool[] {
     {
       name: "one_ip_lookup_subdomains",
       description:
-        "Look up subdomains of a public domain in certificate transparency records. Results are not a complete DNS inventory.",
+        "Look up subdomains of a public domain using passive DNS data with certificate transparency as a fallback. Sources may limit results; this is not a complete or current DNS inventory.",
       inputSchema: {
         type: "object",
         properties: {
