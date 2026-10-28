@@ -2,11 +2,12 @@ name: Sync upstream
 
 on:
   schedule:
+    # 每天 UTC 04:23 (北京时间 12:23) 定时同步
     - cron: '23 4 * * *'
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: sync-upstream
@@ -14,33 +15,43 @@ concurrency:
 
 jobs:
   sync:
-    if: github.event.repository.fork && (github.event_name == 'workflow_dispatch' || vars.AUTO_SYNC_UPSTREAM == 'true')
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: write
-      actions: write
-    env:
-      GH_TOKEN: ${{ github.token }}
-      REPO: ${{ github.repository }}
-      ENABLE_CF_DEPLOY: ${{ vars.ENABLE_CF_DEPLOY }}
+    timeout-minutes: 10
     steps:
-      - name: Sync without overwriting fork changes
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync with upstream
         shell: bash
         run: |
           set -euo pipefail
-          metadata=$(gh api "repos/$REPO")
-          parent=$(jq -r '.parent.full_name' <<< "$metadata")
-          branch=$(jq -r '.default_branch' <<< "$metadata")
-          if [ "$parent" != 'zhihui-hu/one-ip' ]; then
-            echo 'Only direct forks of zhihui-hu/one-ip are synchronized.'
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git remote add upstream https://github.com/zhihui-hu/one-ip.git 2>/dev/null || true
+          git fetch upstream main
+
+          LOCAL_SHA=$(git rev-parse HEAD)
+          UPSTREAM_SHA=$(git rev-parse upstream/main)
+
+          echo "Local SHA: $LOCAL_SHA"
+          echo "Upstream SHA: $UPSTREAM_SHA"
+
+          if [ "$LOCAL_SHA" = "$UPSTREAM_SHA" ]; then
+            echo "Already up to date with upstream."
             exit 0
           fi
-          before=$(gh api "repos/$REPO/commits/$branch" --jq '.sha')
-          # The GitHub merge-upstream endpoint fails on conflicts; no force reset.
-          gh api --method POST "repos/$REPO/merge-upstream" -f branch="$branch"
-          after=$(gh api "repos/$REPO/commits/$branch" --jq '.sha')
-          if [ "$before" != "$after" ] && [ "$ENABLE_CF_DEPLOY" = 'true' ]; then
-            # GITHUB_TOKEN pushes do not trigger push workflows. Dispatch explicitly.
-            gh workflow run pages.yml --repo "$REPO" --ref "$branch"
+
+          echo "Merging upstream/main..."
+          if git merge upstream/main -m "chore: sync from upstream" --no-edit; then
+            echo "Merged upstream cleanly."
+          else
+            echo "Merge conflict detected, falling back to upstream changes (-X theirs)..."
+            git merge --abort || true
+            git merge upstream/main -X theirs -m "chore: sync from upstream (resolved with theirs)" --no-edit
           fi
+
+          echo "Pushing changes to origin..."
+          git push origin main
